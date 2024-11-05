@@ -1,0 +1,1 @@
+Qui verranno messe le tecnologie framework eccetera che useremo
