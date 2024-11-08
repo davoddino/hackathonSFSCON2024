@@ -20,6 +20,9 @@ blip_model_id = "Salesforce/blip-image-captioning-base"
 blip_processor = BlipProcessor.from_pretrained(blip_model_id)
 blip_model = BlipForConditionalGeneration.from_pretrained(blip_model_id).to("cuda" if torch.cuda.is_available() else "cpu")
 
+child_image_path = "../data/bambino.jpg"
+adult_image_path = "../data/adulto.jpg"
+
 def get_image_description(image_path):
     try:
         image = Image.open(image_path).convert('RGB')
@@ -58,6 +61,17 @@ def parse_age_group(response):
         print(f"Errore nel parsing della classificazione dell'età: {e}")
         return {"age_group": "Not specified"}
 
+def display_classification_image(age_group):
+    try:
+        if age_group == "Child" and os.path.exists(child_image_path):
+            Image.open(child_image_path).show(title="Classification Result: Child")
+        elif age_group == "Adult" and os.path.exists(adult_image_path):
+            Image.open(adult_image_path).show(title="Classification Result: Adult")
+        else:
+            print("Classificazione dell'età non riconosciuta. Nessuna immagine verrà mostrata.")
+    except Exception as e:
+        print(f"Errore nella visualizzazione dell'immagine di classificazione: {e}")
+
 def analyze_scene(image_path):
     description = get_image_description(image_path)
     if not description:
@@ -70,6 +84,9 @@ def analyze_scene(image_path):
     structured_info = extract_structured_info(image_path, description)
     print("\nDescrizione Strutturata:")
     print(structured_info)
+    
+    age_group = structured_info.get("age_group", "Not specified")
+    display_classification_image(age_group)
 
 if __name__ == "__main__":
     image_path = "../data/dario.jpg"

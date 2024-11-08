@@ -1,12 +1,15 @@
 from transformers import BlipProcessor, BlipForConditionalGeneration, AutoModelForCausalLM, AutoTokenizer
 from PIL import Image
 import re
+import json
 import torch
 import os
 
+# Carica il modello e il tokenizer di Moondream2
 model_id = "vikhyatk/moondream2"
 revision = "2024-08-26"
 
+# Carica il modello con trust_remote_code=True per supportare metodi personalizzati
 moondream_model = AutoModelForCausalLM.from_pretrained(
     model_id,
     trust_remote_code=True,
@@ -16,49 +19,77 @@ moondream_model = AutoModelForCausalLM.from_pretrained(
 
 moondream_tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
 
+# Carica BLIP per la descrizione delle immagini
 blip_model_id = "Salesforce/blip-image-captioning-base"
 blip_processor = BlipProcessor.from_pretrained(blip_model_id)
 blip_model = BlipForConditionalGeneration.from_pretrained(blip_model_id).to("cuda" if torch.cuda.is_available() else "cpu")
 
+# Funzione per ottenere una descrizione dall'immagine utilizzando BLIP
 def get_image_description(image_path):
     try:
         image = Image.open(image_path).convert('RGB')
         inputs = blip_processor(image, return_tensors="pt").to(moondream_model.device)
         with torch.no_grad():
             outputs = blip_model.generate(**inputs, max_length=100)
-        return blip_processor.decode(outputs[0], skip_special_tokens=True)
+        description = blip_processor.decode(outputs[0], skip_special_tokens=True)
+        return description
     except Exception as e:
         print(f"Errore nella descrizione dell'immagine: {e}")
         return ""
 
+# Funzione per estrarre classificazione dell'età dalla descrizione utilizzando Moondream2
 def extract_structured_info(image_path, description):
     try:
+        # Carica l'immagine
         image = Image.open(image_path).convert('RGB')
+        
+        # Codifica l'immagine per ottenere gli embeddings
         with torch.no_grad():
             image_embeds = moondream_model.encode_image(image).to(moondream_model.device)
+        
+        # Definisci la domanda per estrarre la classificazione dell'età
         question = (
             "Tell me if the person in the picture is a child or an adult. Respond only with 'Child' or 'Adult'. For example:\n"
             "Child"
         )
+        
+        # Utilizza il metodo answer_question del modello Moondream2
         response = moondream_model.answer_question(image_embeds, question, moondream_tokenizer)
-        return parse_age_group(response)
+        
+        print("Descrizione trovata:")
+        print(response)
+        
+        # Parsing dell'output per estrarre la classificazione dell'età
+        structured_info = parse_age_group(response)
+        return structured_info
+    
     except Exception as e:
         print(f"Errore nell'estrazione delle informazioni strutturate: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
 
+# Funzione per parse la classificazione dell'età dalla risposta del modello
 def parse_age_group(response):
     try:
+        # Cerca 'Child' o 'Adult' nella risposta, ignorando altri testi
         match = re.search(r'\b(Child|Adult)\b', response, re.IGNORECASE)
         if match:
-            return {"age_group": match.group(1).capitalize()}
+            age_group = match.group(1).capitalize()
+            return {"age_group": age_group}
         else:
             print("Nessuna informazione valida trovata nell'output del modello.")
             return {"age_group": "Not specified"}
+    
     except Exception as e:
         print(f"Errore nel parsing della classificazione dell'età: {e}")
+        import traceback
+        traceback.print_exc()
         return {"age_group": "Not specified"}
 
+# Funzione principale per analizzare la scena
 def analyze_scene(image_path):
+    # Fase 1: Ottieni la descrizione dell'immagine
     description = get_image_description(image_path)
     if not description:
         print("Descrizione dell'immagine non disponibile.")
@@ -67,13 +98,17 @@ def analyze_scene(image_path):
     print("\nDescrizione dell'immagine:")
     print(description)
     
+    # Fase 2: Estrai le informazioni strutturate dalla descrizione
     structured_info = extract_structured_info(image_path, description)
     print("\nDescrizione Strutturata:")
     print(structured_info)
 
+# Esempio di utilizzo
 if __name__ == "__main__":
-    image_path = "../data/dario.jpg"
+    image_path = "../data/dario.jpg" 
     if not os.path.exists(image_path):
         print(f"L'immagine specificata non esiste: {image_path}")
     else:
         analyze_scene(image_path)
+
+
