@@ -24,3 +24,10 @@ Segui questi passaggi per configurare il progetto:
 1. Clona il repository:
    ```bash
    git clone https://github.com/username/hacktahonSFSCON2024.git
+
+
+## conversational 
+
+export AGENT_ID=EiSLpHLQasHvqybIhD3g
+
+export ELEVENLABS_API_KEY=sk_f016c965fd17ede10526604a15d114ffa5fc12d85fd1d4c3
