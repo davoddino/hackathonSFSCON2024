@@ -11,16 +11,22 @@ app.use(express.json());
 app.use('/static', express.static(path.join(__dirname, '../dist')));
 
 app.get('/api/signed-url', async (req, res) => {
+
+    console.log(process.env.XI_API_KEY);
+
     try {
         const response = await fetch(
             `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${process.env.AGENT_ID}`,
             {
+                
                 method: 'GET',
                 headers: {
                     'xi-api-key': process.env.XI_API_KEY,
                 }
             }
         );
+
+        
 
         if (!response.ok) {
             throw new Error('Failed to get signed URL');
@@ -37,6 +43,7 @@ app.get('/api/signed-url', async (req, res) => {
 //API route for getting Agent ID, used for public agents
 app.get('/api/getAgentId', (req, res) => {
     const agentId = process.env.AGENT_ID;
+    console.log(process.env.AGENT_ID)
     res.json({ 
         agentId: `${agentId}` 
     });

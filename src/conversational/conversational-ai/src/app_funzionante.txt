@@ -1,9 +1,8 @@
+// --- src/app.js ---
 import { Conversation } from '@11labs/client';
 
 let conversation = null;
-let conversationTimeout = null;
-let gameActive = false;
-let imageElement = document.getElementById('videoStream');
+let conversationTimeout = null;  // Timer per avviare la conversazione
 
 async function requestMicrophonePermission() {
     try {
@@ -61,7 +60,7 @@ async function startConversation() {
         }
 
         const signedUrl = await getSignedUrl();
-
+        
         conversation = await Conversation.startSession({
             signedUrl: signedUrl,
             onConnect: () => {
@@ -104,72 +103,37 @@ window.addEventListener('error', function(event) {
 
 const socket = new WebSocket("ws://localhost:6789");
 
-// Accetta dati binari come ArrayBuffer
-socket.binaryType = 'arraybuffer';
-
 socket.onopen = () => {
     console.log("Connesso al server WebSocket");
 };
 
 socket.onmessage = async (event) => {
-    if (typeof event.data === 'string') {
-        console.log(`Stato: ${event.data}`);
+    console.log(`Stato: ${event.data}`);
+    
+    clearTimeout(conversationTimeout); // Cancella eventuale timer esistente
 
-        clearTimeout(conversationTimeout);
+    if (event.data === "Person with arms raised") {
+        console.log("Person with arms raised");
+        document.getElementById("birkengymSeller").style.display = "block";
+        document.getElementById("personImage").style.display = "none";
 
-        if (event.data === "Game Started") {
-            console.log("Gioco avviato");
-            gameActive = true;
-            document.getElementById("videoContainer").style.display = "block";
-            document.getElementById("birkengymSeller").style.display = "none";
-            document.getElementById("personImage").style.display = "none";
+        if (conversation) {
+            await endConversation();
+        }
+    } else if (event.data === "Person detected but arms not raised") {
+        console.log("Person detected but arms not raised");
+        document.getElementById("birkengymSeller").style.display = "block";
+        document.getElementById("personImage").style.display = "none";
 
-            if (conversation) {
-                await endConversation();
-            }
-        } else if (event.data === "Congratulations") {
-            console.log("Congratulazioni!");
-            // Mostra la scritta "Congratulazioni!" nell'HTML
-            const congratsElement = document.getElementById("congratulationsMessage");
-            congratsElement.style.display = "block";
-            // Mantieni lo stream video per 4 secondi
-            setTimeout(() => {
-                congratsElement.style.display = "none";
-                gameActive = false;
-                document.getElementById("videoContainer").style.display = "none";
-                document.getElementById("personImage").style.display = "block";
-            }, 4000); // Mostra per 4 secondi
-        } else if (event.data === "Person detected but arms not raised") {
-            console.log("Person detected but arms not raised");
-            gameActive = false;
-            document.getElementById("birkengymSeller").style.display = "block";
-            document.getElementById("videoContainer").style.display = "none";
-            document.getElementById("personImage").style.display = "none";
-
-            if (!conversation) {
-                
-                conversationTimeout = setTimeout(startConversation, 3000);
-            }
-        } else {
-            gameActive = false;
-            document.getElementById("personImage").style.display = "block";
-            document.getElementById("birkengymSeller").style.display = "none";
-            document.getElementById("videoContainer").style.display = "none";
-
-            if (conversation) {
-                await endConversation();
-            }
+        if (!conversation) {
+            conversationTimeout = setTimeout(startConversation, 3000);
         }
     } else {
-        // Riceve i dati binari (frame video)
-        if (gameActive) {
-            const blob = new Blob([event.data], { type: 'image/jpeg' });
-            const url = URL.createObjectURL(blob);
-            imageElement.src = url;
-            // Rilascia l'URL oggetto dopo che l'immagine è stata caricata
-            imageElement.onload = () => {
-                URL.revokeObjectURL(url);
-            };
+        document.getElementById("personImage").style.display = "block";
+        document.getElementById("birkengymSeller").style.display = "none";
+
+        if (conversation) {
+            await endConversation();
         }
     }
 };

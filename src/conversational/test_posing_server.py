@@ -6,7 +6,6 @@ import asyncio
 import websockets
 
 mp_pose = mp.solutions.pose
-mp_drawing = mp.solutions.drawing_utils
 
 def calculate_angle(a, b, c):
     a = np.array([a.x, a.y])
@@ -41,9 +40,18 @@ def are_both_arms_raised(landmarks, angle_margin=40):
 
     return left_arm_extended and right_arm_extended
 
+def check_collision(landmarks, ball_center, ball_radius, image_width, image_height):
+    for landmark in landmarks:
+        x_px = int(landmark.x * image_width)
+        y_px = int(landmark.y * image_height)
+        distance = np.sqrt((x_px - ball_center[0]) ** 2 + (y_px - ball_center[1]) ** 2)
+        if distance <= ball_radius:
+            return True
+    return False
+
 async def person_detection_server(websocket, path):
-    global cap, pose, global_arms_raised, arm_raise_start_time, prev_message  # dichiara prev_message come globale
-    
+    global cap, pose, global_arms_raised, arm_raise_start_time, prev_message, game_active
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -54,53 +62,86 @@ async def person_detection_server(websocket, path):
         results = pose.process(frame_rgb)
 
         if results.pose_landmarks:
-            mp_drawing.draw_landmarks(
-                frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
-                mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
-                mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2)
-            )
+            if game_active:
+                # Logica del mini-gioco
+                if results.segmentation_mask is not None:
+                    condition = np.stack((results.segmentation_mask,) * 3, axis=-1) > 0.1
+                    bg_image = np.zeros(frame.shape, dtype=np.uint8)
+                    bg_image[:] = (0, 0, 0)  # Sfondo nero
+                    segmented_image = np.where(condition, frame, bg_image)
+                else:
+                    segmented_image = frame.copy()
 
-            if are_both_arms_raised(results.pose_landmarks.landmark):
-                if not global_arms_raised:
-                    global_arms_raised = True
-                    arm_raise_start_time = time.time()
-                elif time.time() - arm_raise_start_time >= 3:
-                    await sendStatusChanged(websocket, "Person with arms raised")
-                    cv2.imshow("Segmentazione in tempo reale", frame)
-                    continue
+                # Disegna la palla rossa
+                ball_center = (frame.shape[1] - 50, 50)
+                ball_radius = 20
+                ball_color = (0, 0, 255)
+                cv2.circle(segmented_image, ball_center, ball_radius, ball_color, -1)
+
+                # Controlla la collisione
+                image_height, image_width, _ = frame.shape
+                collision = check_collision(results.pose_landmarks.landmark, ball_center, ball_radius, image_width, image_height)
+                if collision:
+                    print("Collision detected!")
+                    cv2.putText(segmented_image, 'Congratulazioni!', (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,255,0), 3)
+                    # Invia il messaggio "Congratulations" al client
+                    await sendStatusChanged(websocket, "Congratulations")
+                    # Continua a inviare i frame con il messaggio per un breve periodo
+                    for _ in range(30):  # Circa 1 secondo a 30 fps
+                        _, buffer = cv2.imencode('.jpg', segmented_image)
+                        frame_bytes = buffer.tobytes()
+                        await websocket.send(frame_bytes)
+                        await asyncio.sleep(1/30)
+                    # Termina il gioco
+                    game_active = False
+                    global_arms_raised = False
+                    arm_raise_start_time = None
+                else:
+                    # Continua a inviare i frame del gioco
+                    _, buffer = cv2.imencode('.jpg', segmented_image)
+                    frame_bytes = buffer.tobytes()
+                    await websocket.send(frame_bytes)
             else:
-                global_arms_raised = False
-                arm_raise_start_time = None
-                await sendStatusChanged(websocket, "Person detected but arms not raised")
+                # Controlla se le braccia sono alzate per avviare il gioco
+                if are_both_arms_raised(results.pose_landmarks.landmark):
+                    if not global_arms_raised:
+                        global_arms_raised = True
+                        arm_raise_start_time = time.time()
+                    elif time.time() - arm_raise_start_time >= 3:
+                        game_active = True
+                        print("Gioco avviato!")
+                        await sendStatusChanged(websocket, "Game Started")
+                else:
+                    global_arms_raised = False
+                    arm_raise_start_time = None
+                    await sendStatusChanged(websocket, "Person detected but arms not raised")
         else:
             await sendStatusChanged(websocket, "No person detected")
 
-        cv2.imshow("Interfaccia", frame)
-        if cv2.waitKey(5) & 0xFF == ord('q'):
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
     pose.close()
-    
 
 async def sendStatusChanged(websocket, message):
-    global prev_message  # dichiara prev_message come globale
+    global prev_message
     if message != prev_message:
         await websocket.send(message)
-        prev_message = message  # aggiorna prev_message se il messaggio è stato inviato
-    
+        prev_message = message
 
 async def main():
-    global cap, pose, global_arms_raised, arm_raise_start_time, prev_message
+    global cap, pose, global_arms_raised, arm_raise_start_time, prev_message, game_active
     cap = cv2.VideoCapture(0)
-    pose = mp_pose.Pose(static_image_mode=False, model_complexity=1, enable_segmentation=False, min_detection_confidence=0.5)
+    pose = mp_pose.Pose(static_image_mode=False, model_complexity=1, enable_segmentation=True, min_detection_confidence=0.5)
     global_arms_raised = False
     arm_raise_start_time = None
-    prev_message = ""  # inizializza prev_message
-    
+    prev_message = ""
+    game_active = False
+
     async with websockets.serve(person_detection_server, "localhost", 6789):
-        await asyncio.Future()  # run forever
+        await asyncio.Future()
 
 if __name__ == "__main__":
     asyncio.run(main())

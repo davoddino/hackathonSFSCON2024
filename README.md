@@ -31,3 +31,9 @@ Segui questi passaggi per configurare il progetto:
 export AGENT_ID=EiSLpHLQasHvqybIhD3g
 
 export ELEVENLABS_API_KEY=sk_f016c965fd17ede10526604a15d114ffa5fc12d85fd1d4c3
+
+
+
+export AGENT_ID=N6zKxWDh0K4tHjArsIDT
+export
+ELEVENLABS_API_KEY=sk_e9e3252005a9f06e922abd6fd4939300559d49ea3c9795e7
